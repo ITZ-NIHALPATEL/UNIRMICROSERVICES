@@ -28,8 +28,8 @@ export default function RegisterPage() {
     try {
       await register(`${formData.firstName} ${formData.lastName}`.trim(), formData.email, formData.password);
       navigate("/feed", { replace: true });
-    } catch {
-      setError("Registration failed. Please try again.");
+    } catch (err) {
+      setError(err.message || "Registration failed. Please try again.");
     } finally {
       setLoading(false);
     }

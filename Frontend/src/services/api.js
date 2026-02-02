@@ -43,26 +43,43 @@ async function apiFetch(endpoint, options = {}) {
   const url = joinUrl(API_BASE_URL, endpoint);
   // API DISABLED – using dummy data for frontend testing
   // const response = await fetch(url, { method, headers: _nextHeaders, body: _requestBody, signal });
-  const data = await mockApiFetch(url, { method, body, signal });
+  // const data = await mockApiFetch(url, { method, body, signal }); // DISABLED MOCK
+  
+  const response = await fetch(url, { method, headers: _nextHeaders, body: _requestBody, signal });
 
-  return data;
+  if (!response.ok) {
+     const errorText = await response.text();
+     throw new Error(errorText || `Request failed with status ${response.status}`);
+  }
+
+  const contentType = response.headers.get("content-type");
+  if (contentType && contentType.includes("application/json")) {
+    return response.json();
+  }
+  return response.text();
 }
 
 export const authService = {
-  login: (email, password) =>
-    apiFetch("/auth/login", {
+  login: async (email, password) => {
+    const token = await apiFetch("/auth/login", {
       method: "POST",
       body: { email, password },
       auth: false,
-    }),
+    });
+    // The backend returns a plain string token
+    return { accessToken: token };
+  },
   register: (name, email, password) =>
-    apiFetch("/auth/register", {
+    apiFetch("/auth/signup", {
       method: "POST",
       body: { name, email, password },
       auth: false,
     }),
-  me: () => apiFetch("/auth/me", { method: "GET" }),
-  logout: () => apiFetch("/auth/logout", { method: "POST" }),
+  me: () => apiFetch("/auth/me", { method: "GET" }), // NOTE: Not in provided controller, likely need to handle failure or remove if not implemented
+  logout: () => {
+    // Client-side only logout since backend is stateless JWT
+    return Promise.resolve();
+  },
 };
 
 export const postsService = {

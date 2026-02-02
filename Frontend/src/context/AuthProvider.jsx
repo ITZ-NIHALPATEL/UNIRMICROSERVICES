@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AuthContext } from "./authContext";
 import { clearAuth, readAuth, writeAuth } from "@/auth/authStorage";
-import { getJwtExpiryMs, isJwtExpired } from "@/auth/jwt";
+import { getJwtExpiryMs, isJwtExpired, decodeJwtPayload } from "@/auth/jwt";
 import { authService } from "@/services/api";
 
 const USE_MOCK_AUTH =
@@ -92,41 +92,38 @@ export function AuthProvider({ children }) {
         writeAuth(nextAuthWithUser);
         setAuth(nextAuthWithUser);
       } catch {
-        // ignore
+        // Fallback: try to decode user from token
+        const payload = decodeJwtPayload(accessTokenFromRes);
+        if (payload) {
+             const fallbackUser = {
+                 id: payload.sub || payload.id,
+                 name: payload.name || payload.email || payload.sub,
+                 email: payload.email || payload.sub
+             };
+             const nextAuthWithUser = { ...nextAuth, user: fallbackUser };
+             writeAuth(nextAuthWithUser);
+             setAuth(nextAuthWithUser);
+        }
       }
     }
   }, []);
 
   const register = useCallback(async (name, email, password) => {
-    if (USE_MOCK_AUTH) {
-      await new Promise((resolve) => setTimeout(resolve, 300));
-      const nextUser = { ...mockUser, name, email };
-      const nextAuth = { user: nextUser, accessToken: "dev-mock-token", refreshToken: null };
-      writeAuth(nextAuth);
-      setAuth(nextAuth);
-      return;
+    // 1. Call signup endpoint
+    const userDto = await authService.register(name, email, password);
+
+    // 2. Signup successful (no error thrown).
+    // The backend returns UserDto but NO token. We must login to get the token.
+    await login(email, password);
+    
+    // 3. Update auth state with the UserDto we got from register
+    // (since login likely couldn't fetch it if /me is missing)
+    if (userDto) {
+        const currentAuth = readAuth();
+        const updatedAuth = { ...currentAuth, user: userDto };
+        writeAuth(updatedAuth);
+        setAuth(updatedAuth);
     }
-
-    const res = await authService.register(name, email, password);
-
-    const accessTokenFromRes = res?.accessToken ?? res?.token ?? res?.jwt ?? res?.data?.accessToken ?? null;
-    const refreshTokenFromRes = res?.refreshToken ?? res?.data?.refreshToken ?? null;
-    const userFromRes = res?.user ?? res?.data?.user ?? null;
-
-    if (!accessTokenFromRes) {
-      // Some APIs require logging in after register; fall back to login flow.
-      await login(email, password);
-      return;
-    }
-
-    const nextAuth = {
-      user: userFromRes ?? { name, email },
-      accessToken: accessTokenFromRes,
-      refreshToken: refreshTokenFromRes,
-    };
-
-    writeAuth(nextAuth);
-    setAuth(nextAuth);
   }, [login]);
 
   const value = useMemo(
